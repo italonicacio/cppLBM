@@ -1,4 +1,4 @@
-# LMB
+# LBM
 
 ## RUN
 
