@@ -103,7 +103,8 @@ constexpr std::array<std::uint32_t, dim> idx2pos(std::uint32_t idx) {
     }
 }
 
-constexpr std::uint32_t pos2idx(std::array<std::uint32_t, dim> pos) {
+template<typename T>
+constexpr T pos2idx(std::array<T, dim> pos) {
     if constexpr (dim == 2) {
         return pos[0] + pos[1] * domain_size[0];
     } else {
@@ -131,7 +132,7 @@ std::float32_t FuncFeq(std::float32_t rho, std::array<std::float32_t, dim>& u, s
 
 }
 
-void macroscopics (
+void Macroscopics (
     std::vector<std::array<float, n_pop>>& pop_arr,
     std::vector<float>& rho_arr,
     std::vector<std::array<float, dim>> u_arr
@@ -149,7 +150,7 @@ void macroscopics (
         for(std::uint32_t j = 0; j < pop.size(); ++j) {
             auto p = pop[j];
             for(std::uint32_t d = 0; d < dim; ++d) {
-                // duvida pq em zig é u[d] += p * pop_dir[j]
+                // duvida: pq em zig é u[d] += p * pop_dir[j]
                 // sendo que pop_dir[j] é um array de 2 dimensões
                 u[d] += p * pop_dir[j][d]; 
             }
@@ -177,6 +178,42 @@ void Collision(
             pop_arr[idx][i] = f_coll;
         }
     }
+}
+
+void Streaming(    
+    std::vector<std::array<float, n_pop>>& popA_arr,
+    std::vector<std::array<float, n_pop>>& popB_arr
+) {
+    for(std::uint32_t idx; idx < popA_arr.size(); ++idx) {
+        auto pos = idx2pos(idx);
+        auto pop = popA_arr[idx];
+        for(std::uint32_t i = 0; i < pop.size(); ++i) {
+            std::float32_t p = pop[i];
+            const std::array<std::int32_t, dim> pos_to = {
+                (static_cast<std::int32_t>(pos[0]) + static_cast<std::int32_t>(pop_dir[0]) + domain_size[0]) % domain_size[0],
+                (static_cast<std::int32_t>(pos[1]) + static_cast<std::int32_t>(pop_dir[1]) + domain_size[1]) % domain_size[1]
+            };
+
+            const std::uint32_t idx_to = pos2idx(pos_to);
+            popB_arr[idx_to][i] = p;
+            
+        }
+    }
+}
+
+void run_time_step(
+    std::vector<std::array<float, n_pop>>& popA_arr,
+    std::vector<std::array<float, n_pop>>& popB_arr,
+    std::vector<float>& rho_arr,
+    std::vector<std::array<float, dim>> u_arr,
+    std::uint32_t time_step
+) {
+    std::vector<std::array<float, n_pop>> popMain_arr = (time_step % 2 == 0) ? popA_arr : popB_arr;
+    std::vector<std::array<float, n_pop>> popAux_arr = (time_step % 2 == 0) ? popA_arr : popB_arr;
+
+    Macroscopics(popMain_arr, rho_arr, u_arr);
+    Collision(popMain_arr, rho_arr, u_arr);
+    Streaming(popMain_arr, popAux_arr);
 }
 
 int32_t main() {
