@@ -6,6 +6,7 @@
 #include <iostream>
 #include <vector>
 #include <numeric>
+#include <chrono>
 
 
 enum class VelSet {D2Q9, D3Q19};
@@ -93,13 +94,33 @@ constexpr std::float32_t cs2 = 1.0 / 3.0;
 constexpr std::float32_t tau = 0.9;
 
 constexpr std::array<std::uint32_t, dim> domain_size = {32, 32};
+constexpr std::uint32_t array_size = domain_size[0] * domain_size[1] * (dim == 2 ? 1 : domain_size[2]);
 
 // o idx em zig é usize, que pode não ser necessariamente um uint64
-constexpr std::array<std::uint32_t, dim> idx2pos(std::uint32_t idx) {
+// ESSA não funciona essa função, o compilador não consegue definir o valor de saida
+// ai o dim é ajustado, mas o if não consegue fazer com que 
+// constexpr std::array<std::uint32_t, dim> idx2pos(std::uint32_t idx) {
+    
+//     #if vel_set_use == VelSet::D2Q9
+//         return {idx % domain_size[0], idx / domain_size[0]};
+//     # else
+//         return { idx % domain_size[0], (idx / domain_size[0]) % domain_size[1], idx / (domain_size[0] * domain_size[1]) };
+//     #endif
+// }
+
+constexpr auto idx2pos(std::uint32_t idx) {
+    // constexpr std::int32_t converted_idx = static_cast<std::int32_t>(idx);
     if constexpr (dim == 2) {
-        return {idx % domain_size[0], idx / domain_size[0]};
+        return std::array<std::int32_t, 2>{
+            static_cast<std::int32_t>(idx % domain_size[0]), 
+            static_cast<std::int32_t>(idx / domain_size[0])
+        };
     } else {
-        return { idx % domain_size[0], (idx / domain_size[0]) % domain_size[1], idx % (domain_size[0] * domain_size[1]) };
+        return std::array<std::int32_t, 3>{ 
+            static_cast<std::int32_t>(idx % domain_size[0]), 
+            static_cast<std::int32_t>((idx / domain_size[0]) % domain_size[1]), 
+            static_cast<std::int32_t>(idx / (domain_size[0] * domain_size[1])) 
+        };
     }
 }
 
@@ -112,16 +133,20 @@ constexpr T pos2idx(std::array<T, dim> pos) {
     }
 }
 
+std::uint32_t idxPop(std::array<std::int32_t, dim> pos, std::uint32_t i) {
+    return (pos2idx(pos)) * i;
+}
+
 // template<typename T>
 // T DotProd(T& x, T& y) {
     
 //     return std::inner_product(x.begin(), x.end(), y.begin(), static_cast<T>(0));
 // }
 
-template<typename T, typename V>
-T DotProd(T& x, V& y) {
-    
-    return std::inner_product(x.begin(), x.end(), y.begin(), static_cast<T>(0));
+
+std::float32_t DotProd(const std::array<std::float32_t, dim>& x,  const std::array<std::int8_t, dim>& y) {
+
+    return std::inner_product(x.begin(), x.end(), y.begin(), static_cast<std::float32_t>(0));
 }
 
 std::float32_t FuncFeq(std::float32_t rho, std::array<std::float32_t, dim>& u, std::uint32_t i) {
@@ -133,97 +158,161 @@ std::float32_t FuncFeq(std::float32_t rho, std::array<std::float32_t, dim>& u, s
 }
 
 void Macroscopics (
-    std::vector<std::array<float, n_pop>>& pop_arr,
-    std::vector<float>& rho_arr,
-    std::vector<std::array<float, dim>> u_arr
+    std::vector<std::float32_t>& pop_arr,
+    std::vector<std::float32_t>& rho_arr,
+    std::vector<std::float32_t>& ux_arr,
+    std::vector<std::float32_t>& uy_arr
 ) {
-    std::size_t i = 0;
     
-    while(i < pop_arr.size()) {
-        const auto pop = pop_arr[i];
-        float rho = 0;
+    for(std::size_t idx = 0; idx < array_size; ++idx) {
+        const auto pos = idx2pos(idx);
+        std::array<std::float32_t, n_pop> pop;
+        for(std::size_t j = 0; j < n_pop; ++j) {
+            pop[j] = pop_arr[idxPop(pos, j)];
+        }
+
+        std::float32_t rho = 0;
         for(auto& p : pop) {
             rho += p;
         }
 
-        std::array<float, dim> u = {0};
-        for(std::uint32_t j = 0; j < pop.size(); ++j) {
-            auto p = pop[j];
+        std::array<std::float32_t, dim> u{0};
+        for(std::uint32_t j = 0; j < n_pop; ++j) {
             for(std::uint32_t d = 0; d < dim; ++d) {
-                // duvida: pq em zig é u[d] += p * pop_dir[j]
-                // sendo que pop_dir[j] é um array de 2 dimensões
-                u[d] += p * pop_dir[j][d]; 
+
+                u[d] += pop[j] * pop_dir[j][d] / rho; 
             }
-            rho_arr[i] = rho;
-            u_arr[i] = u;
+            rho_arr[idx] = rho;
+            ux_arr[idx] = u[0];
+            uy_arr[idx] = u[1];
+
         }
-        ++i;
     }
 }
 
 void Collision(
-    std::vector<std::array<float, n_pop>>& pop_arr,
-    std::vector<float>& rho_arr,
-    std::vector<std::array<float, dim>> u_arr
+    std::vector<std::float32_t>& pop_arr,
+    std::vector<std::float32_t>& rho_arr,
+    std::vector<std::float32_t>& ux_arr,
+    std::vector<std::float32_t>& uy_arr
+
 ) {
-    for(std::uint32_t idx = 0; idx < pop_arr.size(); ++idx) {
-        const float rho = rho_arr[idx];
-        auto u = u_arr[idx];
-        const auto& pop = pop_arr[idx];
+    for(std::uint32_t idx = 0; idx < array_size; ++idx) {
+        const std::float32_t rho = rho_arr[idx];
+        auto ux = ux_arr[idx];
+        auto uy = uy_arr[idx];
+        std::array<std::float32_t, dim> u = {ux, uy};
+        const auto pos = idx2pos(idx);
+        std::array<std::float32_t, n_pop> pop;
+        for(std::size_t j = 0; j < n_pop; ++j) {
+            pop[j] = pop_arr[idxPop(pos, j)];
+        }
 
         for(std::uint32_t i = 0; i < pop.size(); ++i) {
-            const float f = pop[i];
-            const float feq = FuncFeq(rho, u, i);
-            const float f_coll = (f - feq) / tau;
-            pop_arr[idx][i] = f_coll;
+            const std::float32_t f = pop[i];
+            const std::float32_t feq = FuncFeq(rho, u, i);
+            const std::float32_t f_coll = (f - feq) / tau;
+            pop_arr[idxPop(pos, i)] = f_coll;
         }
     }
 }
 
 void Streaming(    
-    std::vector<std::array<float, n_pop>>& popA_arr,
-    std::vector<std::array<float, n_pop>>& popB_arr
+    std::vector<std::float32_t>& popA_arr,
+    std::vector<std::float32_t>& popB_arr
 ) {
-    for(std::uint32_t idx; idx < popA_arr.size(); ++idx) {
+    for(std::uint32_t idx; idx < array_size; ++idx) {
         auto pos = idx2pos(idx);
-        auto pop = popA_arr[idx];
-        for(std::uint32_t i = 0; i < pop.size(); ++i) {
-            std::float32_t p = pop[i];
+        for(std::uint32_t i = 0; i < n_pop; ++i) {
             const std::array<std::int32_t, dim> pos_to = {
-                (static_cast<std::int32_t>(pos[0]) + static_cast<std::int32_t>(pop_dir[0]) + domain_size[0]) % domain_size[0],
-                (static_cast<std::int32_t>(pos[1]) + static_cast<std::int32_t>(pop_dir[1]) + domain_size[1]) % domain_size[1]
+                (static_cast<std::int32_t>(pos[0]) + static_cast<std::int32_t>(pop_dir[i][0]) + domain_size[0]) % domain_size[0],
+                (static_cast<std::int32_t>(pos[1]) + static_cast<std::int32_t>(pop_dir[i][1]) + domain_size[1]) % domain_size[1]
             };
 
             const std::uint32_t idx_to = pos2idx(pos_to);
-            popB_arr[idx_to][i] = p;
+            popB_arr[idxPop(pos_to, i)] = popA_arr[idxPop(pos, i)];
             
         }
     }
 }
 
+struct LBMArrays {
+    std::vector<std::float32_t> popA;
+    std::vector<std::float32_t> popB;
+    std::vector<std::float32_t> ux;
+    std::vector<std::float32_t> uy;
+    std::vector<std::float32_t> rho;
+    
+    LBMArrays() : 
+        popA(array_size * n_pop),
+        popB(array_size * n_pop),
+        ux(array_size),
+        uy(array_size),
+        rho(array_size)
+    {}
+};
+
 void run_time_step(
-    std::vector<std::array<float, n_pop>>& popA_arr,
-    std::vector<std::array<float, n_pop>>& popB_arr,
-    std::vector<float>& rho_arr,
-    std::vector<std::array<float, dim>> u_arr,
+    LBMArrays& lbm_array,
     std::uint32_t time_step
 ) {
-    std::vector<std::array<float, n_pop>> popMain_arr = (time_step % 2 == 0) ? popA_arr : popB_arr;
-    std::vector<std::array<float, n_pop>> popAux_arr = (time_step % 2 == 0) ? popA_arr : popB_arr;
+    std::vector<std::float32_t> popMain_arr = (time_step % 2 == 0) ? lbm_array.popA : lbm_array.popB;
+    std::vector<std::float32_t> popAux_arr = (time_step % 2 == 0) ? lbm_array.popA : lbm_array.popB;
 
-    Macroscopics(popMain_arr, rho_arr, u_arr);
-    Collision(popMain_arr, rho_arr, u_arr);
+    Macroscopics(popMain_arr, lbm_array.rho, lbm_array.ux, lbm_array.uy);
+    Collision(popMain_arr, lbm_array.rho, lbm_array.ux, lbm_array.uy);
     Streaming(popMain_arr, popAux_arr);
 }
 
+void RunSimulation() {
+    LBMArrays lbm_arrays;
+    const std::uint32_t max_steps = 1000;
+
+    for(std::uint32_t step = 0; step < max_steps; ++step) {
+        std::cout << "Running time step " << step << " ..." << std::endl; 
+
+        run_time_step(lbm_arrays, step);
+    }
+}
+
+using ClockT = std::chrono::high_resolution_clock;
+
+std::string TimeConverter(const ClockT::duration& elapsedTime)
+{
+    std::chrono::hours hr = std::chrono::duration_cast<std::chrono::hours>(elapsedTime);
+    std::chrono::minutes min = std::chrono::duration_cast<std::chrono::minutes>(elapsedTime - hr);
+    std::chrono::seconds sec = std::chrono::duration_cast<std::chrono::seconds>(elapsedTime - hr - min);
+    std::chrono::milliseconds ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsedTime - hr - min - sec);
+
+    std::string time =  (hr.count() < 1 ? "" : std::to_string(hr.count()) + "hr ")      // Hour
+                        + (min.count() < 1 ? "" : std::to_string(min.count()) + "min ") // Minutes
+                        + (sec.count() < 1 ? "" : std::to_string(sec.count()) + "sec ") // Seconds
+                        + std::to_string(ms.count()) + "ms";                            // Milliseconds
+    
+    return time;
+}
+
+
 int32_t main() {
     
-    std::cout << "Dim is:" << dim << std::endl;
-    std::cout << "pop is:" << n_pop << std::endl;
-    std::cout << "dim pop_dir: " << pop_dir.size() << std::endl;
-    std::cout << "dim pop_dir 0:"  << pop_dir[0][0] << std::endl;
+    std::cout << "Start simulation!" << std::endl;
+    ClockT::time_point starTime = ClockT::now();
+    
+    RunSimulation(); 
+    ClockT::time_point endTime = ClockT::now();
 
-    std::cout << "dim pop_weights " << pop_weights.size() << std::endl;
+    ClockT::duration elapsedTime = endTime - starTime;
+    const std::string time = TimeConverter(elapsedTime);
+    std::cout << "Finished simulation in " << time  << "!"<< std::endl;
+
+    // std::cout << "Dim is:" << dim << std::endl;
+    // std::cout << "pop is:" << n_pop << std::endl;
+    // std::cout << "dim pop_dir: " << pop_dir.size() << std::endl;
+    // std::cout << "dim pop_dir 0:"  << pop_dir[0][0] << std::endl;
+
+    // std::cout << "dim pop_weights " << pop_weights.size() << std::endl;
+
+
 
     return 0;
 }
