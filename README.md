@@ -2,4 +2,4 @@
 
 ## RUN
 
-g++ -O lbm.cpp && ./a.out
+g++ -std=c++23 lbm.cpp && ./a.out

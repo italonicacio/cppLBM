@@ -7,6 +7,8 @@
 #include <vector>
 #include <numeric>
 #include <chrono>
+#include <exception>
+#include <format>
 
 
 enum class VelSet {D2Q9, D3Q19};
@@ -108,6 +110,8 @@ constexpr std::uint32_t array_size = domain_size[0] * domain_size[1] * (dim == 2
 //     #endif
 // }
 
+
+// esse pode retornar uint32_t, no zig ta retornando assim
 constexpr auto idx2pos(std::uint32_t idx) {
     // constexpr std::int32_t converted_idx = static_cast<std::int32_t>(idx);
     if constexpr (dim == 2) {
@@ -134,7 +138,7 @@ constexpr T pos2idx(std::array<T, dim> pos) {
 }
 
 std::uint32_t idxPop(std::array<std::int32_t, dim> pos, std::uint32_t i) {
-    return (pos2idx(pos)) * i;
+    return (pos2idx(pos)) * n_pop + i;
 }
 
 // template<typename T>
@@ -168,7 +172,7 @@ void Macroscopics (
         const auto pos = idx2pos(idx);
         std::array<std::float32_t, n_pop> pop;
         for(std::size_t j = 0; j < n_pop; ++j) {
-            pop[j] = pop_arr[idxPop(pos, j)];
+            pop[j] = pop_arr[idxPop(pos, j)];           
         }
 
         std::float32_t rho = 0;
@@ -182,6 +186,7 @@ void Macroscopics (
 
                 u[d] += pop[j] * pop_dir[j][d] / rho; 
             }
+            
             rho_arr[idx] = rho;
             ux_arr[idx] = u[0];
             uy_arr[idx] = u[1];
@@ -198,11 +203,11 @@ void Collision(
 
 ) {
     for(std::uint32_t idx = 0; idx < array_size; ++idx) {
+        const auto pos = idx2pos(idx);
         const std::float32_t rho = rho_arr[idx];
         auto ux = ux_arr[idx];
         auto uy = uy_arr[idx];
         std::array<std::float32_t, dim> u = {ux, uy};
-        const auto pos = idx2pos(idx);
         std::array<std::float32_t, n_pop> pop;
         for(std::size_t j = 0; j < n_pop; ++j) {
             pop[j] = pop_arr[idxPop(pos, j)];
@@ -211,7 +216,7 @@ void Collision(
         for(std::uint32_t i = 0; i < pop.size(); ++i) {
             const std::float32_t f = pop[i];
             const std::float32_t feq = FuncFeq(rho, u, i);
-            const std::float32_t f_coll = (f - feq) / tau;
+            const std::float32_t f_coll = f + (f - feq) / tau;
             pop_arr[idxPop(pos, i)] = f_coll;
         }
     }
@@ -250,6 +255,20 @@ struct LBMArrays {
         uy(array_size),
         rho(array_size)
     {}
+
+    void Initialize() {
+        for(std::int32_t idx = 0; idx < array_size; ++idx) {
+            auto pos = idx2pos(idx);
+            ux[idx] = 0;
+            uy[idx] = 0;
+            rho[idx] = 1;
+
+            for(std::uint32_t pop = 0; pop < n_pop; ++pop) {
+                popA[idxPop(pos, pop)] = pop_weights[pop];
+                popB[idxPop(pos, pop)] = pop_weights[pop];
+            }
+        }
+    }
 };
 
 void run_time_step(
@@ -266,11 +285,12 @@ void run_time_step(
 
 void RunSimulation() {
     LBMArrays lbm_arrays;
+    lbm_arrays.Initialize();
     const std::uint32_t max_steps = 1000;
 
     for(std::uint32_t step = 0; step < max_steps; ++step) {
         std::cout << "Running time step " << step << " ..." << std::endl; 
-
+        std::cout << std::format("rho {} ux {} uy {} ...", lbm_arrays.rho[0], lbm_arrays.ux[0], lbm_arrays.uy[0]) << std::endl;
         run_time_step(lbm_arrays, step);
     }
 }
@@ -292,9 +312,58 @@ std::string TimeConverter(const ClockT::duration& elapsedTime)
     return time;
 }
 
+void test_fun_feq() {
+    std::float32_t rho = 1;
+    std::array<std::float32_t, dim> u{0,0};
+
+    for(std::size_t i = 0; i < n_pop; ++i) {
+        std::float32_t feq = FuncFeq(rho, u, i);
+        if(!(feq == pop_weights[i])) {
+            throw std::runtime_error("error");
+        }
+    }
+
+}
+
+void test_idx_pop() {
+    std::uint32_t count = 0;
+    for(std::size_t idx = 0; idx < array_size; ++idx) {
+        auto pos = idx2pos(idx);
+        auto retIdx = pos2idx(pos);
+        if(!(idx == retIdx)) {
+            throw std::runtime_error("error idx_pop 1");
+        }
+        
+        for(std::uint32_t d = 0; d < dim; ++d) {
+            if(!(pos[d] >= 0)) {
+                throw std::runtime_error("error idx_pop 3");
+            }   
+
+            if(!(pos[d] < domain_size[d])) {
+                throw std::runtime_error("error idx_pop 3");
+            }   
+        }
+
+
+        for(std::size_t i = 0; i < n_pop; ++i) {
+            auto popIdx = idxPop(pos, i);
+            if(!(count == popIdx)) {
+                throw std::runtime_error("error idx_pop 2");
+            }
+            count += 1;
+        }
+    }
+}
+
+void test() {
+    test_fun_feq();
+    test_idx_pop();
+    
+}
+
 
 int32_t main() {
-    
+    test();
     std::cout << "Start simulation!" << std::endl;
     ClockT::time_point starTime = ClockT::now();
     
@@ -311,7 +380,6 @@ int32_t main() {
     // std::cout << "dim pop_dir 0:"  << pop_dir[0][0] << std::endl;
 
     // std::cout << "dim pop_weights " << pop_weights.size() << std::endl;
-
 
 
     return 0;
