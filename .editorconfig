@@ -1,0 +1,20 @@
+root = true
+
+[*]
+charset = utf-8
+indent_size = 4
+indent_style = tab
+tab_width = 4
+insert_final_newline = true
+
+
+#vscode
+cpp_new_line_before_open_brace_function = same_line
+cpp_new_line_before_open_brace_block = same_line
+cpp_new_line_before_else = false
+cpp_space_pointer_reference_alignment =  left
+cpp_space_after_keywords_in_control_flow_statements = true
+cpp_space_after_comma = true
+cpp_space_after_keywords_in_control_flow_statements = false
+
+cpp_space_around_binary_operator = ignore
