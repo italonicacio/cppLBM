@@ -13,8 +13,8 @@
 
 
 std::vector<std::uint8_t> export_array(
-	std::vector<std::float32_t>& arr,
-	std::vector<std::uint32_t>& dims
+	const std::vector<std::float32_t>& arr,
+	const std::vector<std::uint32_t>& dims
 ) {
 	const std::array<std::uint32_t, 3> dims_use = { dims[0], dims[1], dims.size() < 3 ? 1 : dims[2] };
 	std::vector<std::uint8_t> vtk_string;
@@ -69,7 +69,7 @@ std::vector<std::uint8_t> export_array(
 			vtk_string.emplace_back(e);
 		}
 	}
-	return std::move(vtk_string);
+	return vtk_string;
 }
 
 

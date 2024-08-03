@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <fstream>
+#include <filesystem>
 #include <bit>
 #include <chrono>
 
@@ -31,6 +32,7 @@ inline std::string TimeConverter(const ClockT::duration& elapsedTime) {
 }
 
 inline void WriteArrayListToFile(const std::string& filename, const std::vector<std::uint8_t>& list) {
+
 	// Abre o arquivo em modo binário
 	std::ofstream file(filename, std::ios::binary);
 

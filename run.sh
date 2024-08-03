@@ -1,3 +1,5 @@
+rm output/*
+
 cd build
 
 make

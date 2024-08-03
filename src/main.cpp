@@ -15,9 +15,14 @@
 int32_t main() {
 
 	std::cout << "Start simulation!" << std::endl;
+
+	const std::uint32_t max_steps = 10000;
+	const std::uint32_t export_interval = 1;
+
 	ClockT::time_point starTime = ClockT::now();
-	const std::uint32_t max_steps = 100;
-	LBMArrays out_arr = RunSimulation(max_steps);
+
+	LBMArrays out_arr = RunSimulation(max_steps, export_interval);
+
 	ClockT::time_point endTime = ClockT::now();
 
 	ClockT::duration elapsedTime = endTime - starTime;
@@ -25,9 +30,9 @@ int32_t main() {
 	std::cout << "Finished simulation in " << time  << "!"<< std::endl;
 
 
-	std::cout << "Exporting Data ..." << std::endl;
+	// std::cout << "Exporting Data ..." << std::endl;
 
-	out_arr.ExportArrays(max_steps);
+	// out_arr.ExportArrays(max_steps);
 
 
 	return 0;

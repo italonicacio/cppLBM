@@ -60,3 +60,8 @@ if (CMAKE_BUILD_TYPE STREQUAL "DEBUG" OR enable_tests)
 	add_subdirectory(tests/unit-tests)
 endif()
 
+if (CMAKE_BUILD_TYPE STREQUAL "DEBUG")
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Ofast -ffast-math -fno-trapping-math -march=native -mtune=native")
+endif()
+
+# set(CMAKE_VERBOSE_MAKEFILE ON)S
